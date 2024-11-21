@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Webcam Face Detection</title>
-    <!-- 引入正確的 face-api.js -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
     <style>
         body {
@@ -24,23 +23,13 @@
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480"></canvas>
     <p id="result">Face Detection Result: Waiting...</p>
-    <p id="serial-status">Serial Port: Not connected</p>
-    <button onclick="connectSerial()">Connect to Serial Port</button>
-    <button onclick="closeSerialPort()">Close Serial Port</button>
-    <div>
-        <h3>Send Message to Serial Device</h3>
-        <input id="message-box" type="text" placeholder="Enter message">
-        <button onclick="sendMessage()">Send</button>
-    </div>
+    <p id="face-detected">Face Detected: No</p> <!-- 新增人臉狀態顯示 -->
     <script>
         const video = document.getElementById("video");
         const canvas = document.getElementById("canvas");
         const context = canvas.getContext("2d");
         const result = document.getElementById("result");
-        const serialStatus = document.getElementById("serial-status");
-
-        let serialPort = null;
-        let serialWriter = null;
+        const faceDetected = document.getElementById("face-detected"); // 新增對應的 p 元素
 
         // 啟動攝影機
         async function startCamera() {
@@ -57,10 +46,12 @@
         // 載入 face-api.js 模型並啟動臉部偵測
         async function loadModelsAndDetect() {
             try {
-                // 確保模型正確載入
-                await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
-                await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
-                await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+                // 使用 CDN 模型
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.0.2/model/'),
+                    faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.0.2/model/'),
+                    faceapi.nets.faceRecognitionNet.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.0.2/model/')
+                ]);
                 console.log("Models loaded successfully.");
 
                 // 啟動臉部偵測
@@ -71,9 +62,11 @@
                     faceapi.draw.drawDetections(canvas, detections);
                     result.textContent = `Detected ${detections.length} face(s)`;
 
+                    // 更新是否偵測到人臉的狀態
                     if (detections.length > 0) {
-                        const xCoordinate = detections[0].detection.box.x;
-                        sendSerialData(xCoordinate);
+                        faceDetected.textContent = "Face Detected: Yes";
+                    } else {
+                        faceDetected.textContent = "Face Detected: No";
                     }
                 }, 200);
             } catch (err) {
@@ -81,68 +74,7 @@
             }
         }
 
-        // 連接序列埠
-        async function connectSerial() {
-            try {
-                if (serialPort) {
-                    console.warn("Serial port already connected. Closing...");
-                    await closeSerialPort();
-                }
-                const port = await navigator.serial.requestPort();
-                serialPort = port;
-                await serialPort.open({ baudRate: 9600 });
-                serialWriter = serialPort.writable.getWriter();
-                serialStatus.textContent = "Serial Port: Connected";
-                console.log("Serial port connected.");
-            } catch (error) {
-                serialStatus.textContent = "Serial Port: Failed to connect - " + error.message;
-                console.error("Error connecting to serial port:", error);
-            }
-        }
-
-        // 關閉序列埠
-        async function closeSerialPort() {
-            if (serialPort) {
-                try {
-                    await serialWriter.releaseLock();
-                    await serialPort.close();
-                    serialPort = null;
-                    serialWriter = null;
-                    serialStatus.textContent = "Serial Port: Closed";
-                    console.log("Serial port closed.");
-                } catch (error) {
-                    console.error("Error closing serial port:", error);
-                }
-            }
-        }
-
-        // 傳送數據到序列埠
-        async function sendSerialData(data) {
-            if (!serialWriter) {
-                console.error("Serial writer not initialized.");
-                serialStatus.textContent = "Serial Port: Not connected";
-                return;
-            }
-            try {
-                const encoder = new TextEncoder();
-                await serialWriter.write(encoder.encode(`${data}\n`));
-                console.log(`Sent: ${data}`);
-            } catch (error) {
-                console.error("Error sending data to serial port:", error);
-            }
-        }
-
-        // 手動傳送消息
-        async function sendMessage() {
-            const message = document.getElementById("message-box").value;
-            if (message) {
-                await sendSerialData(message);
-            } else {
-                console.warn("No message to send.");
-            }
-        }
-
-        // 啟動攝影機與模型載入
+        // 啟動程式
         startCamera();
         loadModelsAndDetect();
     </script>

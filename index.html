@@ -23,21 +23,21 @@
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480"></canvas>
     <p id="result">Face Detection Result: Waiting...</p>
+    <p id="face-detected">Face Detected: No</p> <!-- 是否偵測到人臉的狀態 -->
     <script>
         const video = document.getElementById("video");
         const canvas = document.getElementById("canvas");
         const context = canvas.getContext("2d");
         const result = document.getElementById("result");
+        const faceDetected = document.getElementById("face-detected");
 
         // 啟動攝影機
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 video.srcObject = stream;
-                console.log("Camera started successfully.");
             } catch (err) {
-                alert("Failed to access camera: " + err.message);
-                console.error("Camera error:", err);
+                alert("Failed to access camera. Please allow camera access.");
             }
         }
 
@@ -49,7 +49,6 @@
                     faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models'),
                     faceapi.nets.faceRecognitionNet.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models')
                 ]);
-                console.log("Models loaded successfully.");
 
                 // 啟動臉部偵測
                 setInterval(async () => {
@@ -58,9 +57,16 @@
                     context.drawImage(video, 0, 0, canvas.width, canvas.height);
                     faceapi.draw.drawDetections(canvas, detections);
                     result.textContent = `Detected ${detections.length} face(s)`;
+
+                    // 更新是否偵測到人臉的狀態
+                    if (detections.length > 0) {
+                        faceDetected.textContent = "Face Detected: Yes";
+                    } else {
+                        faceDetected.textContent = "Face Detected: No";
+                    }
                 }, 200);
-            } catch (err) {
-                console.error("Error loading models or detecting faces:", err);
+            } catch {
+                alert("Error loading models or detecting faces. Please try again.");
             }
         }
 

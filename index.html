@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>人臉辨識與 Arduino USB 通信</title>
-    <!-- 引入 TensorFlow.js 和 BlazeFace -->
+    <!-- 引入 TensorFlow.js 和 BlazeFace 模型 -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 </head>
@@ -12,10 +12,9 @@
     <h1>人臉辨識與 Arduino USB 通信</h1>
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
-    <button id="listDevices">列出 USB 裝置</button>
     <button id="connect">連接 Arduino</button>
-    <button id="start">開始人臉辨識</button>
-    <textarea id="output" rows="15" cols="60" readonly></textarea>
+    <button id="start">開始偵測</button>
+    <textarea id="output" rows="10" cols="50" readonly></textarea>
 
     <script>
         let model;
@@ -24,7 +23,6 @@
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const output = document.getElementById('output');
 
         // 開啟攝影機
         async function setupCamera() {
@@ -40,28 +38,36 @@
         // 載入 BlazeFace 模型
         async function loadModel() {
             model = await blazeface.load();
-            output.value += "BlazeFace 模型載入完成！\n";
+            console.log("BlazeFace 模型載入完成！");
         }
 
-        // 列出所有 USB 裝置
-        document.getElementById('listDevices').addEventListener('click', async () => {
-            output.value = "正在查詢 USB 裝置...\n";
+        // 偵測人臉並傳送座標
+        async function detectFace() {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const predictions = await model.estimateFaces(video, false);
 
-            try {
-                const devices = await navigator.usb.getDevices();
-                if (devices.length === 0) {
-                    output.value += "未找到任何 USB 裝置。\n";
-                } else {
-                    devices.forEach(device => {
-                        output.value += `設備名稱: ${device.productName || "未知"}\n`;
-                        output.value += `Vendor ID: 0x${device.vendorId.toString(16).padStart(4, "0")}\n`;
-                        output.value += `Product ID: 0x${device.productId.toString(16).padStart(4, "0")}\n\n`;
-                    });
-                }
-            } catch (error) {
-                output.value += `查詢 USB 裝置時發生錯誤: ${error.message}\n`;
+            if (predictions.length > 0) {
+                predictions.forEach(async (prediction) => {
+                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
+                    console.log(`偵測到人臉 x 座標: ${x}`);
+
+                    // 傳送 x 座標到 Arduino
+                    if (device) {
+                        try {
+                            const encoder = new TextEncoder();
+                            const data = encoder.encode(`${x}\n`);
+                            await device.transferOut(4, data); // Endpoint 4 用於數據傳輸
+                            const output = document.getElementById('output');
+                            output.value += `傳送到 Arduino: x=${x}\n`;
+                        } catch (error) {
+                            console.error("傳送數據失敗: ", error);
+                        }
+                    } else {
+                        console.log("尚未連接 Arduino！");
+                    }
+                });
             }
-        });
+        }
 
         // 連接到 Arduino
         document.getElementById('connect').addEventListener('click', async () => {
@@ -72,50 +78,24 @@
                     ]
                 });
 
-                await device.open();
-                await device.selectConfiguration(1);
-                await device.claimInterface(0);
+                await device.open(); // 打開 USB 設備
+                await device.selectConfiguration(1); // 設置配置
+                await device.claimInterface(0); // 聲明接口
 
+                const output = document.getElementById('output');
                 output.value += `成功連接到 Arduino 設備: Vendor ID=0x2341, Product ID=${device.productId.toString(16)}\n`;
             } catch (error) {
+                console.error("連接設備失敗: ", error);
+                const output = document.getElementById('output');
                 output.value += `連接失敗: ${error.message}\n`;
             }
         });
-
-        // 偵測人臉並傳送座標
-        async function detectFace() {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const predictions = await model.estimateFaces(video, false);
-
-            if (predictions.length > 0) {
-                predictions.forEach(async (prediction) => {
-                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
-                    output.value += `偵測到人臉 x 座標: ${x}\n`;
-
-                    // 傳送 x 座標到 Arduino
-                    if (device) {
-                        try {
-                            const encoder = new TextEncoder();
-                            const data = encoder.encode(`${x}\n`);
-                            await device.transferOut(4, data); // 使用 Endpoint 4
-                            output.value += `已傳送到 Arduino: x=${x}\n`;
-                        } catch (error) {
-                            output.value += `傳送數據失敗: ${error.message}\n`;
-                        }
-                    } else {
-                        output.value += "尚未連接 Arduino！\n";
-                    }
-                });
-            } else {
-                output.value += "未偵測到人臉。\n";
-            }
-        }
 
         // 啟動人臉辨識
         document.getElementById('start').addEventListener('click', async () => {
             await setupCamera();
             await loadModel();
-            setInterval(detectFace, 100); // 每 100 毫秒偵測一次
+            setInterval(detectFace, 100); // 每 100 毫秒進行一次偵測
         });
     </script>
 </body>

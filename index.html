@@ -3,48 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebUSB 與 Arduino 通信</title>
+    <title>WebUSB Vendor ID 與 Arduino 連接</title>
 </head>
 <body>
-    <h1>WebUSB 與 Arduino 通信</h1>
+    <h1>輸入 Vendor ID 與 Product ID 連接 Arduino</h1>
+    <label for="vendorId">Vendor ID (16進位):</label>
+    <input type="text" id="vendorId" placeholder="例如: 2341">
+    <br>
+    <label for="productId">Product ID (16進位):</label>
+    <input type="text" id="productId" placeholder="例如: 0043">
+    <br>
     <button id="connect">連接 Arduino</button>
-    <button id="sendData">傳送數據</button>
     <textarea id="output" rows="10" cols="50" readonly></textarea>
 
     <script>
         let device;
 
-        // 連接到 Arduino
+        // 將 16 進位轉換為十進位
+        function hexToDecimal(hexString) {
+            return parseInt(hexString, 16);
+        }
+
+        // 連接 Arduino
         document.getElementById('connect').addEventListener('click', async () => {
+            const vendorIdInput = document.getElementById('vendorId').value;
+            const productIdInput = document.getElementById('productId').value;
+
+            if (!vendorIdInput || !productIdInput) {
+                alert("請輸入 Vendor ID 和 Product ID！");
+                return;
+            }
+
+            const vendorId = hexToDecimal(vendorIdInput);
+            const productId = hexToDecimal(productIdInput);
+
             try {
-                // 請求使用者選擇 USB 設備
+                // 請求使用者選擇符合 Vendor ID 與 Product ID 的設備
                 device = await navigator.usb.requestDevice({
-                    filters: [{ vendorId: 0x2341 }] // Arduino 的 Vendor ID（根據設備可調整）
+                    filters: [{ vendorId: vendorId, productId: productId }]
                 });
 
                 await device.open(); // 打開 USB 設備
                 await device.selectConfiguration(1); // 設置配置
                 await device.claimInterface(0); // 聲明接口
 
-                console.log("成功連接到 Arduino！");
+                const output = document.getElementById('output');
+                output.value += `成功連接到設備:\nVendor ID: ${vendorIdInput}, Product ID: ${productIdInput}\n`;
             } catch (error) {
-                console.error("連接 Arduino 失敗: ", error);
-            }
-        });
-
-        // 傳送數據到 Arduino
-        document.getElementById('sendData').addEventListener('click', async () => {
-            if (device) {
-                try {
-                    const encoder = new TextEncoder();
-                    const data = encoder.encode("Hello Arduino\n");
-                    await device.transferOut(4, data); // Endpoint 4 用於數據傳輸
-                    console.log("數據已傳送: Hello Arduino");
-                } catch (error) {
-                    console.error("傳送數據失敗: ", error);
-                }
-            } else {
-                console.log("尚未連接 Arduino！");
+                console.error("連接設備失敗: ", error);
+                const output = document.getElementById('output');
+                output.value += `連接失敗: ${error.message}\n`;
             }
         });
     </script>

@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>人臉偵測與序列通訊</title>
+    <title>人臉偵測與序列通訊 (Polyfill)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@serialport/web-serial-polyfill"></script>
 </head>
 <body>
     <video id="video" autoplay playsinline width="640" height="480"></video>
@@ -51,7 +52,8 @@
                     // 傳送 x 座標到 Arduino
                     if (writer) {
                         try {
-                            await writer.write(new TextEncoder().encode(x + "\n"));
+                            const data = `${x}\n`;
+                            await writer.write(new TextEncoder().encode(data));
                         } catch (error) {
                             console.error("傳送到 Arduino 時發生錯誤: ", error);
                         }

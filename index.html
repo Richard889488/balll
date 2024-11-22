@@ -3,96 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>人臉辨識與 Arduino 通信</title>
-    <!-- 引入 TensorFlow.js 與 BlazeFace 模型 -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-    <!-- 引入 Web Serial Polyfill -->
-    <script src="https://cdn.jsdelivr.net/npm/@google/web-serial-polyfill"></script>
+    <title>WebUSB 與 Arduino 通信</title>
 </head>
 <body>
-    <h1>人臉辨識與 Arduino 通信</h1>
-    <video id="video" autoplay playsinline width="640" height="480"></video>
-    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+    <h1>WebUSB 與 Arduino 通信</h1>
     <button id="connect">連接 Arduino</button>
-    <button id="start">開始偵測</button>
+    <button id="sendData">傳送數據</button>
     <textarea id="output" rows="10" cols="50" readonly></textarea>
 
     <script>
-        let model;
-        let port;
-        let writer;
-
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // 啟用 Polyfill
-        if (!('serial' in navigator)) {
-            console.log("Web Serial API 不支援，啟用 Polyfill");
-            navigator.serial = new SerialPolyfill();
-        }
-
-        // 開啟攝影機
-        async function setupCamera() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            video.srcObject = stream;
-            return new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    resolve(video);
-                };
-            });
-        }
-
-        // 載入 BlazeFace 模型
-        async function loadModel() {
-            model = await blazeface.load();
-            console.log("BlazeFace 模型載入完成！");
-        }
-
-        // 偵測人臉並傳送座標
-        async function detectFace() {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const predictions = await model.estimateFaces(video, false);
-
-            if (predictions.length > 0) {
-                predictions.forEach(async (prediction) => {
-                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
-                    console.log(`偵測到人臉 x 座標: ${x}`);
-
-                    // 傳送 x 座標到 Arduino
-                    if (writer) {
-                        try {
-                            await writer.write(new TextEncoder().encode(x + "\n"));
-                            const output = document.getElementById('output');
-                            output.value += `傳送到 Arduino: x=${x}\n`;
-                        } catch (error) {
-                            console.error("傳送數據失敗: ", error);
-                        }
-                    } else {
-                        console.log("尚未連接 Arduino！");
-                    }
-                });
-            }
-        }
+        let device;
 
         // 連接到 Arduino
         document.getElementById('connect').addEventListener('click', async () => {
             try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 9600 }); // 設定 Baud Rate
-                writer = port.writable.getWriter();
+                // 請求使用者選擇 USB 設備
+                device = await navigator.usb.requestDevice({
+                    filters: [{ vendorId: 0x2341 }] // Arduino 的 Vendor ID（根據設備可調整）
+                });
+
+                await device.open(); // 打開 USB 設備
+                await device.selectConfiguration(1); // 設置配置
+                await device.claimInterface(0); // 聲明接口
+
                 console.log("成功連接到 Arduino！");
             } catch (error) {
                 console.error("連接 Arduino 失敗: ", error);
             }
         });
 
-        // 啟動人臉辨識
-        document.getElementById('start').addEventListener('click', async () => {
-            await setupCamera();
-            await loadModel();
-            setInterval(detectFace, 100); // 每 100 毫秒進行一次偵測
+        // 傳送數據到 Arduino
+        document.getElementById('sendData').addEventListener('click', async () => {
+            if (device) {
+                try {
+                    const encoder = new TextEncoder();
+                    const data = encoder.encode("Hello Arduino\n");
+                    await device.transferOut(4, data); // Endpoint 4 用於數據傳輸
+                    console.log("數據已傳送: Hello Arduino");
+                } catch (error) {
+                    console.error("傳送數據失敗: ", error);
+                }
+            } else {
+                console.log("尚未連接 Arduino！");
+            }
         });
     </script>
 </body>

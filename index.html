@@ -3,30 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>影像辨識與 HC-05 藍牙通信</title>
-    <!-- 引入 TensorFlow.js 與 BlazeFace -->
+    <title>人臉辨識與 Arduino USB 通信</title>
+    <!-- 引入 TensorFlow.js 和 BlazeFace -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 </head>
 <body>
-    <h1>影像辨識與 Arduino 通信</h1>
+    <h1>人臉辨識與 Arduino USB 通信</h1>
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
-    <button id="connect">連接 HC-05 藍牙</button>
+    <button id="listDevices">列出 USB 裝置</button>
+    <button id="connect">連接 Arduino</button>
     <button id="start">開始人臉辨識</button>
-    <textarea id="output" rows="10" cols="50" readonly></textarea>
+    <textarea id="output" rows="15" cols="60" readonly></textarea>
 
     <script>
         let model;
         let device;
+
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         const output = document.getElementById('output');
 
-        let characteristic;
-
-        // 啟動攝影機
+        // 開啟攝影機
         async function setupCamera() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             video.srcObject = stream;
@@ -43,6 +43,45 @@
             output.value += "BlazeFace 模型載入完成！\n";
         }
 
+        // 列出所有 USB 裝置
+        document.getElementById('listDevices').addEventListener('click', async () => {
+            output.value = "正在查詢 USB 裝置...\n";
+
+            try {
+                const devices = await navigator.usb.getDevices();
+                if (devices.length === 0) {
+                    output.value += "未找到任何 USB 裝置。\n";
+                } else {
+                    devices.forEach(device => {
+                        output.value += `設備名稱: ${device.productName || "未知"}\n`;
+                        output.value += `Vendor ID: 0x${device.vendorId.toString(16).padStart(4, "0")}\n`;
+                        output.value += `Product ID: 0x${device.productId.toString(16).padStart(4, "0")}\n\n`;
+                    });
+                }
+            } catch (error) {
+                output.value += `查詢 USB 裝置時發生錯誤: ${error.message}\n`;
+            }
+        });
+
+        // 連接到 Arduino
+        document.getElementById('connect').addEventListener('click', async () => {
+            try {
+                device = await navigator.usb.requestDevice({
+                    filters: [
+                        { vendorId: 0x2341 } // Arduino 官方 Vendor ID
+                    ]
+                });
+
+                await device.open();
+                await device.selectConfiguration(1);
+                await device.claimInterface(0);
+
+                output.value += `成功連接到 Arduino 設備: Vendor ID=0x2341, Product ID=${device.productId.toString(16)}\n`;
+            } catch (error) {
+                output.value += `連接失敗: ${error.message}\n`;
+            }
+        });
+
         // 偵測人臉並傳送座標
         async function detectFace() {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -50,21 +89,21 @@
 
             if (predictions.length > 0) {
                 predictions.forEach(async (prediction) => {
-                    const x = Math.floor(prediction.topLeft[0]); // 偵測到的 x 座標
+                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
                     output.value += `偵測到人臉 x 座標: ${x}\n`;
 
-                    // 傳送座標到 Arduino
-                    if (characteristic) {
+                    // 傳送 x 座標到 Arduino
+                    if (device) {
                         try {
                             const encoder = new TextEncoder();
                             const data = encoder.encode(`${x}\n`);
-                            await characteristic.writeValue(data);
+                            await device.transferOut(4, data); // 使用 Endpoint 4
                             output.value += `已傳送到 Arduino: x=${x}\n`;
                         } catch (error) {
-                            output.value += `傳送失敗: ${error.message}\n`;
+                            output.value += `傳送數據失敗: ${error.message}\n`;
                         }
                     } else {
-                        output.value += "尚未連接 HC-05 藍牙模組！\n";
+                        output.value += "尚未連接 Arduino！\n";
                     }
                 });
             } else {
@@ -72,29 +111,11 @@
             }
         }
 
-        // 連接 HC-05 藍牙模組
-        document.getElementById('connect').addEventListener('click', async () => {
-            try {
-                device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['00001101-0000-1000-8000-00805f9b34fb'] // Serial Port Profile UUID
-                });
-
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService('00001101-0000-1000-8000-00805f9b34fb');
-                characteristic = await service.getCharacteristic('00001101-0000-1000-8000-00805f9b34fb');
-
-                output.value += "成功連接到 HC-05 藍牙模組！\n";
-            } catch (error) {
-                output.value += `連接失敗: ${error.message}\n`;
-            }
-        });
-
         // 啟動人臉辨識
         document.getElementById('start').addEventListener('click', async () => {
             await setupCamera();
             await loadModel();
-            setInterval(detectFace, 100); // 每 100 毫秒進行一次偵測
+            setInterval(detectFace, 100); // 每 100 毫秒偵測一次
         });
     </script>
 </body>

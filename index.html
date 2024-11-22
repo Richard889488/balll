@@ -3,84 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webcam Face Detection</title>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-        }
-        video, canvas {
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            margin-top: 10px;
-        }
-    </style>
+    <title>人臉偵測與序列通訊</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 </head>
 <body>
-    <h1>Webcam Face Detection</h1>
     <video id="video" autoplay playsinline width="640" height="480"></video>
-    <canvas id="canvas" width="640" height="480"></canvas>
-    <p id="result">Face Detection Result: Waiting...</p>
-    <p id="face-detected">Face Detected: No</p>
+    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
+    <button id="connect">連接 Arduino</button>
+    <button id="start">開始偵測</button>
+
     <script>
-        const video = document.getElementById("video");
-        const canvas = document.getElementById("canvas");
-        const context = canvas.getContext("2d");
-        const result = document.getElementById("result");
-        const faceDetected = document.getElementById("face-detected");
+        let model;
+        let port;
+        let writer;
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
 
-        // 啟動攝影機
-        async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-            } catch (err) {
-                alert("Failed to access camera. Please allow camera access.");
+        // 開啟攝影機
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+            return new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    resolve(video);
+                };
+            });
+        }
+
+        // 載入 BlazeFace 模型
+        async function loadModel() {
+            model = await blazeface.load();
+            console.log("BlazeFace 模型載入完成！");
+        }
+
+        // 偵測人臉
+        async function detectFace() {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const predictions = await model.estimateFaces(video, false);
+
+            if (predictions.length > 0) {
+                predictions.forEach(async (prediction) => {
+                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
+                    console.log(`偵測到人臉 x 座標: ${x}`);
+
+                    // 傳送 x 座標到 Arduino
+                    if (writer) {
+                        try {
+                            await writer.write(new TextEncoder().encode(x + "\n"));
+                        } catch (error) {
+                            console.error("傳送到 Arduino 時發生錯誤: ", error);
+                        }
+                    }
+                });
             }
         }
 
-        // 載入模型
-        async function loadModels() {
+        // 連接 Arduino
+        document.getElementById('connect').addEventListener('click', async () => {
             try {
-                await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models'),
-                    faceapi.nets.faceLandmark68Net.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models'),
-                    faceapi.nets.faceRecognitionNet.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js/models')
-                ]);
-                console.log("Models loaded successfully.");
-            } catch (err) {
-                alert("Error loading models or detecting faces. Please try again.");
-                console.error("Error loading models:", err);
+                port = await navigator.serial.requestPort(); // 選擇序列埠
+                await port.open({ baudRate: 9600 });        // 設定 Baud Rate
+
+                writer = port.writable.getWriter();        // 獲取 Writer
+                console.log("成功連接到 Arduino！");
+            } catch (error) {
+                console.error("連接 Arduino 失敗: ", error);
             }
-        }
+        });
 
-        // 啟動臉部偵測
-        async function startFaceDetection() {
-            setInterval(async () => {
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({
-                    inputSize: 512,
-                    scoreThreshold: 0.5
-                }));
-                context.clearRect(0, 0, canvas.width, canvas.height);
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                faceapi.draw.drawDetections(canvas, detections);
+        // 啟動偵測
+        document.getElementById('start').addEventListener('click', async () => {
+            await setupCamera();
+            await loadModel();
 
-                // 更新狀態
-                if (detections.length > 0) {
-                    result.textContent = `Detected ${detections.length} face(s)`;
-                    faceDetected.textContent = "Face Detected: Yes";
-                } else {
-                    result.textContent = "No faces detected";
-                    faceDetected.textContent = "Face Detected: No";
-                }
-            }, 200);
-        }
-
-        // 啟動應用
-        startCamera();
-        loadModels().then(startFaceDetection);
+            setInterval(detectFace, 100); // 每 100 毫秒偵測一次
+        });
     </script>
 </body>
 </html>

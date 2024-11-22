@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Detection and USB Communication with Arduino Uno</title>
-    <!-- Import TensorFlow.js and BlazeFace -->
+    <title>人臉辨識與 Arduino USB 通信</title>
+    <!-- 引入 TensorFlow.js 和 BlazeFace -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
 </head>
 <body>
-    <h1>Face Detection with USB Communication</h1>
+    <h1>人臉辨識與 Arduino USB 通信</h1>
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
-    <button id="connect">Connect to Arduino</button>
-    <button id="start">Start Detection</button>
-    <textarea id="output" rows="10" cols="50" readonly></textarea>
+    <button id="listDevices">列出 USB 裝置</button>
+    <button id="connect">連接 Arduino</button>
+    <button id="start">開始人臉辨識</button>
+    <textarea id="output" rows="15" cols="60" readonly></textarea>
 
     <script>
         let model;
@@ -23,8 +24,9 @@
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const output = document.getElementById('output');
 
-        // Open the webcam
+        // 開啟攝影機
         async function setupCamera() {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             video.srcObject = stream;
@@ -35,169 +37,85 @@
             });
         }
 
-        // Load the BlazeFace model
+        // 載入 BlazeFace 模型
         async function loadModel() {
             model = await blazeface.load();
-            console.log("BlazeFace model loaded successfully!");
+            output.value += "BlazeFace 模型載入完成！\n";
         }
 
-        // Detect faces and send x-coordinate
+        // 列出所有 USB 裝置
+        document.getElementById('listDevices').addEventListener('click', async () => {
+            output.value = "正在查詢 USB 裝置...\n";
+
+            try {
+                const devices = await navigator.usb.getDevices();
+                if (devices.length === 0) {
+                    output.value += "未找到任何 USB 裝置。\n";
+                } else {
+                    devices.forEach(device => {
+                        output.value += `設備名稱: ${device.productName || "未知"}\n`;
+                        output.value += `Vendor ID: 0x${device.vendorId.toString(16).padStart(4, "0")}\n`;
+                        output.value += `Product ID: 0x${device.productId.toString(16).padStart(4, "0")}\n\n`;
+                    });
+                }
+            } catch (error) {
+                output.value += `查詢 USB 裝置時發生錯誤: ${error.message}\n`;
+            }
+        });
+
+        // 連接到 Arduino
+        document.getElementById('connect').addEventListener('click', async () => {
+            try {
+                device = await navigator.usb.requestDevice({
+                    filters: [
+                        { vendorId: 0x2341 } // Arduino 官方 Vendor ID
+                    ]
+                });
+
+                await device.open();
+                await device.selectConfiguration(1);
+                await device.claimInterface(0);
+
+                output.value += `成功連接到 Arduino 設備: Vendor ID=0x2341, Product ID=${device.productId.toString(16)}\n`;
+            } catch (error) {
+                output.value += `連接失敗: ${error.message}\n`;
+            }
+        });
+
+        // 偵測人臉並傳送座標
         async function detectFace() {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const predictions = await model.estimateFaces(video, false);
 
             if (predictions.length > 0) {
                 predictions.forEach(async (prediction) => {
-                    const x = Math.floor(prediction.topLeft[0]); // Extract the x-coordinate of the face
-                    console.log(`Detected face x-coordinate: ${x}`);
+                    const x = Math.floor(prediction.topLeft[0]); // 人臉的 x 座標
+                    output.value += `偵測到人臉 x 座標: ${x}\n`;
 
-                    // Send the x-coordinate to Arduino
+                    // 傳送 x 座標到 Arduino
                     if (device) {
                         try {
                             const encoder = new TextEncoder();
                             const data = encoder.encode(`${x}\n`);
-                            await device.transferOut(4, data); // Use Endpoint 4 for data transfer
-                            const output = document.getElementById('output');
-                            output.value += `Sent to Arduino: x=${x}\n`;
+                            await device.transferOut(4, data); // 使用 Endpoint 4
+                            output.value += `已傳送到 Arduino: x=${x}\n`;
                         } catch (error) {
-                            console.error("Failed to send data:", error);
+                            output.value += `傳送數據失敗: ${error.message}\n`;
                         }
                     } else {
-                        console.log("Arduino is not connected!");
+                        output.value += "尚未連接 Arduino！\n";
                     }
                 });
+            } else {
+                output.value += "未偵測到人臉。\n";
             }
         }
 
-        // Connect to Arduino
-        document.getElementById('connect').addEventListener('click', async () => {
-            try {
-                device = await navigator.usb.requestDevice({
-                    filters: [
-                        { vendorId: 0x2341, productId: 0x0001 } // Arduino Uno identifiers
-                    ]
-                });
-
-                await device.open(); // Open the USB device
-                await device.selectConfiguration(1); // Set configuration
-                await device.claimInterface(0); // Claim interface
-
-                const output = document.getElementById('output');
-                output.value += `Successfully connected to Arduino Uno: Vendor ID=0x2341, Product ID=0x0001\n`;
-            } catch (error) {
-                console.error("Failed to connect to Arduino:", error);
-                const output = document.getElementById('output');
-                output.value += `Connection failed: ${error.message}\n`;
-            }
-        });
-
-        // Start face detection
+        // 啟動人臉辨識
         document.getElementById('start').addEventListener('click', async () => {
             await setupCamera();
             await loadModel();
-            setInterval(detectFace, 100); // Detect faces every 100ms
-        });
-    </script>
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Detection and USB Communication with Arduino Uno</title>
-    <!-- Import TensorFlow.js and BlazeFace -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
-</head>
-<body>
-    <h1>Face Detection with USB Communication</h1>
-    <video id="video" autoplay playsinline width="640" height="480"></video>
-    <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
-    <button id="connect">Connect to Arduino</button>
-    <button id="start">Start Detection</button>
-    <textarea id="output" rows="10" cols="50" readonly></textarea>
-
-    <script>
-        let model;
-        let device;
-
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-
-        // Open the webcam
-        async function setupCamera() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            video.srcObject = stream;
-            return new Promise((resolve) => {
-                video.onloadedmetadata = () => {
-                    resolve(video);
-                };
-            });
-        }
-
-        // Load the BlazeFace model
-        async function loadModel() {
-            model = await blazeface.load();
-            console.log("BlazeFace model loaded successfully!");
-        }
-
-        // Detect faces and send x-coordinate
-        async function detectFace() {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const predictions = await model.estimateFaces(video, false);
-
-            if (predictions.length > 0) {
-                predictions.forEach(async (prediction) => {
-                    const x = Math.floor(prediction.topLeft[0]); // Extract the x-coordinate of the face
-                    console.log(`Detected face x-coordinate: ${x}`);
-
-                    // Send the x-coordinate to Arduino
-                    if (device) {
-                        try {
-                            const encoder = new TextEncoder();
-                            const data = encoder.encode(`${x}\n`);
-                            await device.transferOut(4, data); // Use Endpoint 4 for data transfer
-                            const output = document.getElementById('output');
-                            output.value += `Sent to Arduino: x=${x}\n`;
-                        } catch (error) {
-                            console.error("Failed to send data:", error);
-                        }
-                    } else {
-                        console.log("Arduino is not connected!");
-                    }
-                });
-            }
-        }
-
-        // Connect to Arduino
-        document.getElementById('connect').addEventListener('click', async () => {
-            try {
-                device = await navigator.usb.requestDevice({
-                    filters: [
-                        { vendorId: 0x2341, productId: 0x0001 } // Arduino Uno identifiers
-                    ]
-                });
-
-                await device.open(); // Open the USB device
-                await device.selectConfiguration(1); // Set configuration
-                await device.claimInterface(0); // Claim interface
-
-                const output = document.getElementById('output');
-                output.value += `Successfully connected to Arduino Uno: Vendor ID=0x2341, Product ID=0x0001\n`;
-            } catch (error) {
-                console.error("Failed to connect to Arduino:", error);
-                const output = document.getElementById('output');
-                output.value += `Connection failed: ${error.message}\n`;
-            }
-        });
-
-        // Start face detection
-        document.getElementById('start').addEventListener('click', async () => {
-            await setupCamera();
-            await loadModel();
-            setInterval(detectFace, 100); // Detect faces every 100ms
+            setInterval(detectFace, 100); // 每 100 毫秒偵測一次
         });
     </script>
 </body>

@@ -3,23 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>人臉偵測與序列通訊</title>
+    <title>人臉辨識與 Arduino 通信</title>
+    <!-- 引入 TensorFlow.js 與 BlazeFace 模型 -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface"></script>
+    <!-- 引入 Web Serial Polyfill -->
+    <script src="https://cdn.jsdelivr.net/npm/@google/web-serial-polyfill"></script>
 </head>
 <body>
+    <h1>人臉辨識與 Arduino 通信</h1>
     <video id="video" autoplay playsinline width="640" height="480"></video>
     <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
     <button id="connect">連接 Arduino</button>
     <button id="start">開始偵測</button>
+    <textarea id="output" rows="10" cols="50" readonly></textarea>
 
     <script>
         let model;
         let port;
         let writer;
+        let reader;
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+
+        // 確保 Web Serial Polyfill 啟用
+        if (!('serial' in navigator)) {
+            console.log("Web Serial API 不支援，啟用 Polyfill");
+            navigator.serial = new SerialPolyfill();
+        }
 
         // 開啟攝影機
         async function setupCamera() {
@@ -38,7 +50,7 @@
             console.log("BlazeFace 模型載入完成！");
         }
 
-        // 偵測人臉
+        // 偵測人臉並傳送座標
         async function detectFace() {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const predictions = await model.estimateFaces(video, false);
@@ -52,33 +64,35 @@
                     if (writer) {
                         try {
                             await writer.write(new TextEncoder().encode(x + "\n"));
+                            const output = document.getElementById('output');
+                            output.value += `傳送到 Arduino: x=${x}\n`;
                         } catch (error) {
-                            console.error("傳送到 Arduino 時發生錯誤: ", error);
+                            console.error("傳送數據失敗: ", error);
                         }
+                    } else {
+                        console.log("尚未連接 Arduino！");
                     }
                 });
             }
         }
 
-        // 連接 Arduino
+        // 連接到 Arduino
         document.getElementById('connect').addEventListener('click', async () => {
             try {
-                port = await navigator.serial.requestPort(); // 選擇序列埠
-                await port.open({ baudRate: 9600 });        // 設定 Baud Rate
-
-                writer = port.writable.getWriter();        // 獲取 Writer
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 9600 }); // 設定 Baud Rate
+                writer = port.writable.getWriter();
                 console.log("成功連接到 Arduino！");
             } catch (error) {
                 console.error("連接 Arduino 失敗: ", error);
             }
         });
 
-        // 啟動偵測
+        // 啟動人臉辨識
         document.getElementById('start').addEventListener('click', async () => {
             await setupCamera();
             await loadModel();
-
-            setInterval(detectFace, 100); // 每 100 毫秒偵測一次
+            setInterval(detectFace, 100); // 每 100 毫秒進行一次偵測
         });
     </script>
 </body>

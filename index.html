@@ -22,12 +22,12 @@
         let model;
         let port;
         let writer;
-        let reader;
+
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        // 確保 Web Serial Polyfill 啟用
+        // 啟用 Polyfill
         if (!('serial' in navigator)) {
             console.log("Web Serial API 不支援，啟用 Polyfill");
             navigator.serial = new SerialPolyfill();
